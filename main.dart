@@ -2,6 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 
+const List<String> currencies = [
+  'USD', 'EUR', 'GBP', 'JPY', 'CAD', 'AUD', 'CHF', 'CNY', 'SEK', 'NZD'
+];
+
 void main() => runApp(const MyApp());
 
 class MyApp extends StatelessWidget {
@@ -16,7 +20,50 @@ class MyApp extends StatelessWidget {
         useMaterial3: true,
       ),
       debugShowCheckedModeBanner: false,
-      home: const CurrencyConverter(),
+      home: const HomePage(),
+    );
+  }
+}
+
+class HomePage extends StatefulWidget {
+  const HomePage({super.key});
+
+  @override
+  State<HomePage> createState() => _HomePageState();
+}
+
+class _HomePageState extends State<HomePage> {
+  int _selectedIndex = 0;
+
+  static const List<Widget> _screens = [
+    CurrencyConverter(),
+    HistoryScreen(),
+  ];
+
+  void _onItemTapped(int index) {
+    setState(() {
+      _selectedIndex = index;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: _screens[_selectedIndex],
+      bottomNavigationBar: BottomNavigationBar(
+        currentIndex: _selectedIndex,
+        onTap: _onItemTapped,
+        items: const [
+          BottomNavigationBarItem(
+            icon: Icon(Icons.currency_exchange),
+            label: 'Convertir',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.history),
+            label: 'Historial',
+          ),
+        ],
+      ),
     );
   }
 }
@@ -30,11 +77,6 @@ class CurrencyConverter extends StatefulWidget {
 
 class _CurrencyConverterState extends State<CurrencyConverter> {
   final TextEditingController _amountController = TextEditingController();
-  
-  final List<String> _currencies = [
-    'USD', 'EUR', 'GBP', 'JPY', 'CAD', 'AUD', 'CHF', 'CNY', 'SEK', 'NZD'
-  ]; 
-
   final List<int> _years = [];
   
   String _fromCurrency = 'USD'; 
@@ -70,18 +112,16 @@ class _CurrencyConverterState extends State<CurrencyConverter> {
       
       final String url = 'https://api.frankfurter.app/$datePath?from=$_fromCurrency&to=$_toCurrency';
       
-      
-
       final response = await http.get(Uri.parse(url));
 
       if (response.statusCode != 200) {
-        throw Exception('La API devolvio un error: ${response.statusCode}');
+        throw Exception('La API devolvioo un error: ${response.statusCode}');
       }
 
       final Map<String, dynamic> data = json.decode(response.body);
 
       if (!data.containsKey('rates') || !data['rates'].containsKey(_toCurrency)) {
-        throw Exception('Conversioon no disponible.');
+        throw Exception('Conversion no disponible.');
       }
 
       final rate = data['rates'][_toCurrency] as double;
@@ -134,7 +174,7 @@ class _CurrencyConverterState extends State<CurrencyConverter> {
                 Expanded(
                   child: DropdownButtonFormField<String>(
                     value: _fromCurrency,
-                    items: _currencies.map((currency) {
+                    items: currencies.map((currency) {
                       return DropdownMenuItem(
                         value: currency,
                         child: Text(currency),
@@ -153,7 +193,7 @@ class _CurrencyConverterState extends State<CurrencyConverter> {
                 Expanded(
                   child: DropdownButtonFormField<String>(
                     value: _toCurrency,
-                    items: _currencies.map((currency) {
+                    items: currencies.map((currency) {
                       return DropdownMenuItem(
                         value: currency,
                         child: Text(currency),
@@ -226,6 +266,143 @@ class _CurrencyConverterState extends State<CurrencyConverter> {
               ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class HistoryScreen extends StatefulWidget {
+  const HistoryScreen({super.key});
+
+  @override
+  State<HistoryScreen> createState() => _HistoryScreenState();
+}
+
+class _HistoryScreenState extends State<HistoryScreen> {
+  String _baseCurrency = 'USD';
+  Map<String, Map<String, dynamic>>? _historicalRates;
+  bool _isLoading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchHistoricalData();
+  }
+
+  Future<void> _fetchHistoricalData() async {
+    setState(() => _isLoading = true);
+
+    final DateTime endDate = DateTime.now();
+    final DateTime startDate = endDate.subtract(const Duration(days: 7));
+
+    final String start = _formatDate(startDate);
+    final String end = _formatDate(endDate);
+
+    final String url = 'https://api.frankfurter.app/$start..$end?from=$_baseCurrency';
+
+    try {
+      final response = await http.get(Uri.parse(url));
+
+      if (response.statusCode != 200) {
+        throw Exception('Error al obtener datos: ${response.statusCode}');
+      }
+
+      final Map<String, dynamic> data = json.decode(response.body);
+
+      setState(() {
+        _historicalRates = Map<String, Map<String, dynamic>>.from(data['rates']);
+        _isLoading = false;
+      });
+    } catch (e) {
+      setState(() => _isLoading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error: ${e.toString()}'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  String _formatDate(DateTime date) {
+    return '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Historial de Tasas'),
+      ),
+      body: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: DropdownButtonFormField<String>(
+              value: _baseCurrency,
+              items: currencies.map((currency) {
+                return DropdownMenuItem(
+                  value: currency,
+                  child: Text(currency),
+                );
+              }).toList(),
+              onChanged: (value) {
+                setState(() {
+                  _baseCurrency = value!;
+                  _fetchHistoricalData();
+                });
+              },
+              decoration: const InputDecoration(
+                labelText: 'Moneda Base',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ),
+          Expanded(
+            child: _isLoading
+                ? const Center(child: CircularProgressIndicator())
+                : _historicalRates == null || _historicalRates!.isEmpty
+                    ? const Center(child: Text('No hay datos disponibles'))
+                    : ListView.builder(
+                        itemCount: _historicalRates!.length,
+                        itemBuilder: (context, index) {
+                          final date = _historicalRates!.keys.elementAt(index);
+                          final rates = _historicalRates![date]!;
+                          return Card(
+                            margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                            child: Padding(
+                              padding: const EdgeInsets.all(16.0),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    date,
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 16,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  ...rates.entries.map((rate) {
+                                    return Padding(
+                                      padding: const EdgeInsets.symmetric(vertical: 4.0),
+                                      child: Row(
+                                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                        children: [
+                                          Text(rate.key),
+                                          Text(rate.value.toStringAsFixed(4)),
+                                        ],
+                                      ),
+                                    );
+                                  }).toList(),
+                                ],
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+          ),
+        ],
       ),
     );
   }
